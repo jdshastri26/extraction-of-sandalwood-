@@ -1,0 +1,134 @@
+1) implementation 
+
+
+# Importing necessary libraries
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import MDAnalysis as mda
+from MDAnalysis.analysis import rdf
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Function to generate molecular structures of key sesquiterpenes
+def generate_sesquiterpenes():
+    sesquiterpenes_smiles = [
+        "CC(C)=CCCC(C)=CCC(C)=CCCC(C)=CCC=C(C)C",  # Simplified example
+        # Add more SMILES strings for different sesquiterpenes
+    ]
+    molecules = [Chem.MolFromSmiles(smiles) for smiles in sesquiterpenes_smiles]
+    for molecule in molecules:
+        molecule = Chem.AddHs(molecule)
+        AllChem.EmbedMolecule(molecule)
+    return molecules
+
+# Function to simulate extraction with solvent
+def simulate_extraction_with_solvent(molecules, solvent_smiles):
+    solvent = Chem.MolFromSmiles(solvent_smiles)
+    solvent = Chem.AddHs(solvent)
+    AllChem.EmbedMolecule(solvent)
+    
+    # Combine sesquiterpenes and solvent into a single system (simplified example)
+    system_molecules = molecules + [solvent]
+    
+    # Convert to PDB format
+    pdb_blocks = [Chem.MolToPDBBlock(mol) for mol in system_molecules]
+    with open("sandalwood_oil_with_solvent.pdb", "w") as f:
+        for pdb_block in pdb_blocks:
+            f.write(pdb_block)
+    
+    return "sandalwood_oil_with_solvent.pdb"
+
+# Function to perform molecular dynamics simulation
+def molecular_dynamics_simulation(pdb_file):
+    u = mda.Universe(pdb_file)
+    
+    # Perform RDF analysis
+    rdf_analysis = rdf.InterRDF(u.select_atoms("all"), u.select_atoms("all"), range=(0.0, 15.0))
+    rdf_analysis.run()
+    
+    # Plot RDF results
+    plt.figure(figsize=(8, 6))
+    plt.plot(rdf_analysis.bins, rdf_analysis.rdf)
+    plt.xlabel("Distance (Å)")
+    plt.ylabel("RDF")
+    plt.title("Radial Distribution Function of Sandalwood Oil with Solvent")
+    plt.show()
+    
+    return rdf_analysis.rdf
+
+# Function to analyze and visualize results
+def analyze_results(rdf_data):
+    peak_distance = rdf_data.argmax()
+    print(f"Peak distance in RDF: {peak_distance} Å")
+
+# Main workflow
+sesquiterpenes = generate_sesquiterpenes()
+pdb_file = simulate_extraction_with_solvent(sesquiterpenes, "CCO")  # Ethanol as solvent
+rdf_data = molecular_dynamics_simulation(pdb_file)
+analyze_results(rdf_data)
+
+
+
+2 Gromacs simulation  
+#!/bin/bash
+# Step 1: Generate topology
+gmx pdb2gmx -f sesquiterpenes.pdb -o sesquiterpenes_processed.gro -water spce
+
+# Step 2: Define the box
+gmx editconf -f sesquiterpenes_processed.gro -o sesquiterpenes_box.gro -c -d 1.0 -bt cubic
+
+# Step 3: Solvate the system
+gmx solvate -cp sesquiterpenes_box.gro -cs spc216.gro -o sesquiterpenes_solv.gro -p topol.top
+
+# Step 4: Add ions
+gmx grompp -f ions.mdp -c sesquiterpenes_solv.gro -p topol.top -o ions.tpr
+echo "SOL" | gmx genion -s ions.tpr -o sesquiterpenes_solv_ions.gro -p topol.top -pname NA -nname CL -neutral
+
+# Step 5: Energy minimization
+gmx grompp -f minim.mdp -c sesquiterpenes_solv_ions.gro -p topol.top -o em.tpr
+gmx mdrun -v -deffnm em
+
+# Step 6: Equilibration (NVT)
+gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -o nvt.tpr
+gmx mdrun -deffnm nvt
+
+# Step 7: Equilibration (NPT)
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -p topol.top -o npt.tpr
+gmx mdrun -deffnm npt
+
+# Step 8: Production run
+gmx grompp -f md.mdp -c npt.gro -p topol.top -o md.tpr
+gmx mdrun -deffnm md
+
+
+3) perform data analysis 
+
+import MDAnalysis as mda
+from MDAnalysis.analysis import rdf
+import matplotlib.pyplot as plt
+
+# Load the trajectory
+u = mda.Universe("topol.tpr", "md.xtc")
+
+# Perform RDF analysis
+rdf_analysis = rdf.InterRDF(u.select_atoms("name OW"), u.select_atoms("name OW"), range=(0.0, 15.0))
+rdf_analysis.run()
+
+# Plot RDF results
+plt.figure(figsize=(8, 6))
+plt.plot(rdf_analysis.bins, rdf_analysis.rdf)
+plt.xlabel("Distance (Å)")
+plt.ylabel("RDF")
+plt.title("Radial Distribution Function of Sandalwood Oil")
+plt.show()
+
+# Analyze binding energies (simplified example)
+binding_energies = []  # Populate with actual binding energy calculations
+
+# Analyze diffusion coefficients (simplified example)
+diffusion_coefficients = []  # Populate with actual diffusion coefficient calculations
+
+print("Binding Energies:", binding_energies)
+print("Diffusion Coefficients:", diffusion_coefficients)
+
+
